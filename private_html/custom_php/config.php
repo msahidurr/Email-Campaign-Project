@@ -1,6 +1,6 @@
 <?php
 // Configuration file for email campaign system
-// Version: 2025-01-25-Fixed-Session-Directory
+// Version: 2025-01-25-TheFastMode-Config
 
 // Get the real path of the current directory
 $current_dir = realpath(__DIR__);
@@ -176,8 +176,16 @@ function get_session_path() {
     return defined('SESSION_PATH') ? SESSION_PATH : sys_get_temp_dir();
 }
 
-// SMTP Email configurations
+// SMTP Email configurations with thefastmode.com specific settings
 $emailConfigs = [
+    'abn@thefastmode.com' => [
+        'smtp_host' => 'smtp.zoho.com',
+        'smtp_port' => 587,
+        'smtp_encryption' => 'tls',
+        'smtp_username' => 'abn@thefastmode.com',
+        'smtp_password' => 'your_zoho_password_here', // Update with actual Zoho password
+        'sender_name' => 'ANB'
+    ],
     'ray.sharma10@gmail.com' => [
         'smtp_host' => 'smtp.gmail.com',
         'smtp_port' => 587,
@@ -193,19 +201,11 @@ $emailConfigs = [
         'smtp_username' => 'support@yourdomain.com',
         'smtp_password' => 'your_password_here',
         'sender_name' => 'Support Team'
-    ],
-    'noreply@yourdomain.com' => [
-        'smtp_host' => 'mail.yourdomain.com',
-        'smtp_port' => 587,
-        'smtp_encryption' => 'tls',
-        'smtp_username' => 'noreply@yourdomain.com',
-        'smtp_password' => 'your_password_here',
-        'sender_name' => 'No Reply'
     ]
 ];
 
 // Log the configuration for debugging
-log_message("Configuration loaded:");
+log_message("Configuration loaded with thefastmode.com Zoho settings:");
 log_message("BASE_PATH: " . BASE_PATH);
 log_message("PUBLIC_PATH: " . PUBLIC_PATH);
 log_message("PRIVATE_PATH: " . PRIVATE_PATH);

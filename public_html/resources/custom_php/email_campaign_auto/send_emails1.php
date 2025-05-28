@@ -1,9 +1,10 @@
 <?php
-// send_emails1.php - Send emails for a campaign using PHPMailer
-// Version: 2025-01-25-Dynamic-Paths
+// send_emails1.php - Send emails for a campaign using PHPMailer with domain-specific headers
+// Version: 2025-01-25-TheFastMode-Zoho-Headers
 
 require_once __DIR__ . '/vendor/autoload.php';
 require_once dirname(dirname(dirname(dirname(__DIR__)))) . '/private_html/custom_php/config.php';
+require_once dirname(dirname(dirname(dirname(__DIR__)))) . '/lib/email-headers-comparison.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
@@ -39,7 +40,7 @@ function read_progress($progress_file) {
     return false;
 }
 
-function setup_mailer($sender_email) {
+function setup_mailer($sender_email, $sender_name) {
     global $emailConfigs;
     
     if (!isset($emailConfigs[$sender_email])) {
@@ -60,11 +61,58 @@ function setup_mailer($sender_email) {
         $mail->SMTPSecure = $config['smtp_encryption'];
         $mail->Port = $config['smtp_port'];
         $mail->CharSet = 'UTF-8';
+        $mail->Encoding = 'quoted-printable'; // Use quoted-printable like email clients
+        $mail->XMailer = ' '; // Disable PHPMailer's default X-Mailer header
         
-        // Sender
-        $mail->setFrom($sender_email, $config['sender_name']);
+        // Initialize header manager for domain-specific headers
+        $headerManager = new EmailHeaderManager();
         
-        log_message("PHPMailer configured for {$sender_email}", SEND_EMAILS_LOG);
+        // Generate domain-specific headers (auto-detects thefastmode.com for Zoho)
+        $clientHeaders = $headerManager->getEmailClientHeaders($sender_email, $sender_name, 'auto');
+        
+        // Set the From address based on domain-specific rules
+        if (strpos(strtolower($sender_email), 'thefastmode.com') !== false) {
+            // Hardcoded for thefastmode.com - always use ANB
+            $mail->setFrom('abn@thefastmode.com', 'ANB');
+            log_message("Using hardcoded thefastmode.com sender: ANB <abn@thefastmode.com>", SEND_EMAILS_LOG);
+        } else {
+            $mail->setFrom($sender_email, $sender_name);
+        }
+        
+        // Add custom headers to make it look like it came from the appropriate email client
+        foreach ($clientHeaders as $key => $value) {
+            if (!in_array($key, ['From', 'Date', 'MIME-Version', 'Content-Type'])) {
+                $mail->addCustomHeader($key, $value);
+            }
+        }
+        
+        // Set proper Message-ID
+        $messageId = $headerManager->generateMessageID($sender_email);
+        $mail->MessageID = $messageId;
+        
+        // Domain-specific additional headers
+        if (strpos(strtolower($sender_email), 'thefastmode.com') !== false) {
+            // Zoho Mail specific headers for thefastmode.com
+            $mail->addCustomHeader('X-Mailer', 'Zoho Mail');
+            $mail->addCustomHeader('User-Agent', 'Zoho Mail');
+            $mail->addCustomHeader('X-Priority', '3');
+            $mail->addCustomHeader('Importance', 'Normal');
+            $mail->addCustomHeader('X-Zoho-Virus-Status', 'Clean');
+            $mail->addCustomHeader('X-Zoho-Spam-Status', 'No');
+            $mail->addCustomHeader('X-ZohoMail-DKIM', 'pass');
+            log_message("Applied Zoho Mail headers for thefastmode.com", SEND_EMAILS_LOG);
+        } else {
+            // Default headers for other domains
+            $mail->addCustomHeader('X-Priority', '3');
+            $mail->addCustomHeader('X-MSMail-Priority', 'Normal');
+            $mail->addCustomHeader('Importance', 'Normal');
+        }
+        
+        // Add List-Unsubscribe header (good practice for bulk emails)
+        $domain = substr(strrchr($sender_email, '@'), 1);
+        $mail->addCustomHeader('List-Unsubscribe', "<mailto:unsubscribe@{$domain}>");
+        
+        log_message("PHPMailer configured for {$sender_email} with domain-specific headers", SEND_EMAILS_LOG);
         return $mail;
     } catch (Exception $e) {
         log_message("PHPMailer configuration failed: {$e->getMessage()}", SEND_EMAILS_LOG);
@@ -83,7 +131,7 @@ if (!preg_match('/^[a-z0-9]{12}$/', $campaign_id)) {
     exit(1);
 }
 
-log_message("Starting email campaign {$campaign_id}", SEND_EMAILS_LOG);
+log_message("Starting email campaign {$campaign_id} with domain-specific headers", SEND_EMAILS_LOG);
 
 $progress_file = CAMPAIGN_DATA_DIR . "/campaign_{$campaign_id}_progress.json";
 if (!file_exists($progress_file)) {
@@ -111,8 +159,8 @@ $content = $progress['content'];
 $sender_email = $progress['sender_email'];
 $sender_name = $progress['sender_name'];
 
-// Setup PHPMailer
-$mail = setup_mailer($sender_email);
+// Setup PHPMailer with domain-specific headers
+$mail = setup_mailer($sender_email, $sender_name);
 if (!$mail) {
     $progress['status'] = 'error';
     $progress['messages'][] = "Failed to configure SMTP for {$sender_email}";
@@ -121,7 +169,8 @@ if (!$mail) {
 }
 
 $progress['status'] = 'running';
-$progress['messages'][] = "Email sending started at " . date('Y-m-d H:i:s');
+$client_type = strpos(strtolower($sender_email), 'thefastmode.com') !== false ? 'Zoho Mail' : 'Email Client';
+$progress['messages'][] = "Email sending started at " . date('Y-m-d H:i:s') . " using {$client_type} headers";
 write_progress($progress_file, $progress);
 
 $remaining_recipients = array_slice($recipients, $emails_sent);
@@ -193,12 +242,44 @@ foreach ($remaining_recipients as $index => $recipient) {
         $mail->Subject = $subject;
         $mail->Body = $personalized_content;
         
+        // Generate a unique Message-ID for each email
+        $headerManager = new EmailHeaderManager();
+        $uniqueMessageId = $headerManager->generateMessageID($sender_email);
+        $mail->MessageID = $uniqueMessageId;
+        
+        // Clear and re-add custom headers for each email
+        $mail->clearCustomHeaders();
+        // Disable PHPMailer's default X-Mailer header for each email
+        $mail->XMailer = ' ';
+        
+        if (strpos(strtolower($sender_email), 'thefastmode.com') !== false) {
+            // Zoho Mail headers for thefastmode.com
+            $mail->addCustomHeader('X-Mailer', 'Zoho Mail');
+            $mail->addCustomHeader('User-Agent', 'Zoho Mail');
+            $mail->addCustomHeader('X-Priority', '3');
+            $mail->addCustomHeader('Importance', 'Normal');
+            $mail->addCustomHeader('X-Zoho-Virus-Status', 'Clean');
+            $mail->addCustomHeader('X-Zoho-Spam-Status', 'No');
+            $mail->addCustomHeader('X-ZohoMail-DKIM', 'pass');
+        } else {
+            // Default headers for other domains
+            $mail->addCustomHeader('X-Priority', '3');
+            $mail->addCustomHeader('X-MSMail-Priority', 'Normal');
+            $mail->addCustomHeader('X-Mailer', 'Microsoft Outlook 16.0');
+            $mail->addCustomHeader('Importance', 'Normal');
+        }
+        
+        // Add campaign tracking headers
+        $mail->addCustomHeader('X-Campaign-ID', $campaign_id);
+        $mail->addCustomHeader('X-Recipient-ID', base64_encode($email));
+        
         // Send email
         $mail->send();
         
         $current_progress['emails_sent']++;
-        $current_progress['messages'][] = "Email sent to {$email} ({$first_name})";
-        log_message("Email sent to {$email} ({$first_name}) for campaign {$campaign_id}", SEND_EMAILS_LOG);
+        $header_type = strpos(strtolower($sender_email), 'thefastmode.com') !== false ? 'Zoho Mail' : 'Outlook';
+        $current_progress['messages'][] = "Email sent to {$email} ({$first_name}) using {$header_type} headers - Message-ID: {$uniqueMessageId}";
+        log_message("Email sent to {$email} ({$first_name}) for campaign {$campaign_id} with {$header_type} headers - Message-ID: {$uniqueMessageId}", SEND_EMAILS_LOG);
         
     } catch (Exception $e) {
         $current_progress['messages'][] = "Failed to send email to {$email} ({$first_name}): {$e->getMessage()}";
@@ -224,7 +305,8 @@ if ($final_progress !== false) {
     if ($final_progress['status'] !== 'stopped') {
         $final_progress['status'] = 'completed';
         $final_progress['completed'] = true;
-        $final_progress['messages'][] = "Campaign {$campaign_id} finished: {$final_progress['emails_sent']} of " . count($recipients) . " emails sent";
+        $client_type = strpos(strtolower($sender_email), 'thefastmode.com') !== false ? 'Zoho Mail' : 'Email Client';
+        $final_progress['messages'][] = "Campaign {$campaign_id} finished: {$final_progress['emails_sent']} of " . count($recipients) . " emails sent using {$client_type} headers";
         write_progress($progress_file, $final_progress);
     }
 }
