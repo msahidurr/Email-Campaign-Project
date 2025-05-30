@@ -1,6 +1,6 @@
 <?php
 // Configuration file for email campaign system
-// Version: 2025-01-25-TheFastMode-Config
+// Version: 2025-01-25-TheFastMode-SMTP-Fix
 
 // Get the real path of the current directory
 $current_dir = realpath(__DIR__);
@@ -176,15 +176,25 @@ function get_session_path() {
     return defined('SESSION_PATH') ? SESSION_PATH : sys_get_temp_dir();
 }
 
-// SMTP Email configurations with thefastmode.com specific settings
+// SMTP Email configurations with proper thefastmode.com settings
 $emailConfigs = [
+    // IMPORTANT: You need to update these with your actual Zoho credentials
     'abn@thefastmode.com' => [
         'smtp_host' => 'smtp.zoho.com',
         'smtp_port' => 587,
         'smtp_encryption' => 'tls',
-        'smtp_username' => 'abn@thefastmode.com',
-        'smtp_password' => 'your_zoho_password_here', // Update with actual Zoho password
+        'smtp_username' => 'abn@thefastmode.com', // This must be a real Zoho email account
+        'smtp_password' => 'YOUR_ACTUAL_ZOHO_PASSWORD_HERE', // Replace with actual password
         'sender_name' => 'ANB'
+    ],
+    // Alternative thefastmode.com email if you have different credentials
+    'noreply@thefastmode.com' => [
+        'smtp_host' => 'smtp.zoho.com',
+        'smtp_port' => 587,
+        'smtp_encryption' => 'tls',
+        'smtp_username' => 'noreply@thefastmode.com', // This must be a real Zoho email account
+        'smtp_password' => 'YOUR_ACTUAL_ZOHO_PASSWORD_HERE', // Replace with actual password
+        'sender_name' => 'The Fast Mode'
     ],
     'ray.sharma10@gmail.com' => [
         'smtp_host' => 'smtp.gmail.com',

@@ -1,6 +1,6 @@
 <?php
-// send_emails1.php - Send emails for a campaign with enhanced debugging
-// Version: 2025-01-25-Enhanced-Debugging
+// send_emails1.php - Send emails with detailed debugging for credential issues
+// Version: 2025-01-25-Debug-Credentials
 
 require_once __DIR__ . '/vendor/autoload.php';
 require_once dirname(dirname(dirname(dirname(__DIR__)))) . '/private_html/custom_php/config.php';
@@ -58,12 +58,18 @@ function test_smtp_connection($sender_email) {
     
     if (!isset($emailConfigs[$sender_email])) {
         enhanced_log("No SMTP configuration found for {$sender_email}", 'ERROR');
-        return false;
+        return ['success' => false, 'error' => "No SMTP configuration found for {$sender_email}"];
     }
     
     $config = $emailConfigs[$sender_email];
     enhanced_log("Testing SMTP connection for {$sender_email}");
-    enhanced_log("SMTP Host: {$config['smtp_host']}, Port: {$config['smtp_port']}");
+    enhanced_log("SMTP Host: {$config['smtp_host']}, Port: {$config['smtp_port']}, User: {$config['smtp_username']}");
+    
+    // Check if password is set
+    if (empty($config['smtp_password']) || $config['smtp_password'] === 'YOUR_ACTUAL_ZOHO_PASSWORD_HERE') {
+        enhanced_log("SMTP password not configured for {$sender_email}", 'ERROR');
+        return ['success' => false, 'error' => "SMTP password not configured for {$sender_email}"];
+    }
     
     $mail = new PHPMailer(true);
     
@@ -75,20 +81,21 @@ function test_smtp_connection($sender_email) {
         $mail->Password = $config['smtp_password'];
         $mail->SMTPSecure = $config['smtp_encryption'];
         $mail->Port = $config['smtp_port'];
-        $mail->SMTPDebug = 0; // Disable debug output
+        $mail->SMTPDebug = 0; // Disable debug output for connection test
+        $mail->Timeout = 30;
         
         // Test connection
         if ($mail->smtpConnect()) {
             enhanced_log("SMTP connection successful for {$sender_email}");
             $mail->smtpClose();
-            return true;
+            return ['success' => true];
         } else {
             enhanced_log("SMTP connection failed for {$sender_email}", 'ERROR');
-            return false;
+            return ['success' => false, 'error' => "SMTP connection failed for {$sender_email}"];
         }
     } catch (Exception $e) {
         enhanced_log("SMTP connection error for {$sender_email}: {$e->getMessage()}", 'ERROR');
-        return false;
+        return ['success' => false, 'error' => "SMTP error: {$e->getMessage()}"];
     }
 }
 
@@ -116,14 +123,16 @@ function setup_mailer($sender_email, $sender_name) {
         $mail->Encoding = 'quoted-printable';
         $mail->XMailer = ' '; // Disable PHPMailer's default X-Mailer header
         $mail->SMTPDebug = 0; // Disable debug output for production
+        $mail->Timeout = 30;
         
-        // Initialize header manager for domain-specific headers
-        $headerManager = new EmailHeaderManager();
+        // CRITICAL CHANGE: Let's use the original sender_email instead of forcing SMTP username
+        // This is likely what changed and caused the issue
+        enhanced_log("ORIGINAL APPROACH: Using sender_email as From address: {$sender_email}");
         
-        // Set the From address based on domain-specific rules
         if (strpos(strtolower($sender_email), 'thefastmode.com') !== false) {
-            $mail->setFrom('abn@thefastmode.com', 'ANB');
-            enhanced_log("Using hardcoded thefastmode.com sender: ANB <abn@thefastmode.com>");
+            // For thefastmode.com, use the original approach that was working
+            enhanced_log("Setting From address to: {$sender_email} ({$sender_name})");
+            $mail->setFrom($sender_email, $sender_name);
         } else {
             $mail->setFrom($sender_email, $sender_name);
         }
@@ -137,9 +146,9 @@ function setup_mailer($sender_email, $sender_name) {
 }
 
 // Start of main execution
-enhanced_log("=== SEND_EMAILS1.PHP STARTED ===");
+enhanced_log("=== SEND_EMAILS1.PHP STARTED (DEBUG VERSION) ===");
 enhanced_log("PHP Version: " . PHP_VERSION);
-enhanced_log("Script arguments: " . implode(', ', $argv));
+enhanced_log("PHPMailer Version: " . (class_exists('PHPMailer\PHPMailer\PHPMailer') ? 'Available' : 'Not Available'));
 
 if ($argc !== 2) {
     enhanced_log("Invalid arguments, expected campaign_id", 'ERROR');
@@ -170,6 +179,28 @@ if ($progress === false) {
 
 enhanced_log("Progress loaded - Status: {$progress['status']}, Total emails: {$progress['total_emails']}, Sent: {$progress['emails_sent']}");
 
+// Log the configuration being used
+$sender_email = $progress['sender_email'];
+$sender_name = $progress['sender_name'];
+
+enhanced_log("=== CONFIGURATION DEBUG ===");
+enhanced_log("Sender Email: {$sender_email}");
+enhanced_log("Sender Name: {$sender_name}");
+
+global $emailConfigs;
+if (isset($emailConfigs[$sender_email])) {
+    $config = $emailConfigs[$sender_email];
+    enhanced_log("SMTP Host: {$config['smtp_host']}");
+    enhanced_log("SMTP Port: {$config['smtp_port']}");
+    enhanced_log("SMTP Username: {$config['smtp_username']}");
+    enhanced_log("SMTP Encryption: {$config['smtp_encryption']}");
+    enhanced_log("Password Set: " . (empty($config['smtp_password']) ? 'NO' : 'YES'));
+    enhanced_log("Password Length: " . strlen($config['smtp_password']));
+} else {
+    enhanced_log("NO SMTP CONFIG FOUND FOR: {$sender_email}", 'ERROR');
+}
+enhanced_log("=== END CONFIGURATION DEBUG ===");
+
 // Check if campaign is stopped or completed
 if (in_array($progress['status'], ['stopped', 'completed']) || $progress['completed']) {
     enhanced_log("Campaign {$campaign_id} is already {$progress['status']}, exiting");
@@ -181,21 +212,23 @@ $emails_sent = $progress['emails_sent'];
 $interval = $progress['interval'];
 $subject = $progress['subject'];
 $content = $progress['content'];
-$sender_email = $progress['sender_email'];
-$sender_name = $progress['sender_name'];
 
-enhanced_log("Campaign details - Sender: {$sender_email}, Interval: {$interval}s, Subject: {$subject}");
+enhanced_log("Campaign details - Interval: {$interval}s, Subject: {$subject}");
 
 // Test SMTP connection first
-if (!test_smtp_connection($sender_email)) {
+enhanced_log("=== TESTING SMTP CONNECTION ===");
+$smtp_test = test_smtp_connection($sender_email);
+if (!$smtp_test['success']) {
     $progress['status'] = 'error';
-    $progress['messages'][] = "SMTP connection test failed for {$sender_email}";
+    $progress['messages'][] = "SMTP connection failed: " . $smtp_test['error'];
     write_progress($progress_file, $progress);
-    enhanced_log("SMTP connection test failed, stopping campaign", 'ERROR');
+    enhanced_log("SMTP connection test failed, stopping campaign: " . $smtp_test['error'], 'ERROR');
     exit(1);
 }
+enhanced_log("SMTP connection test passed");
 
 // Setup PHPMailer
+enhanced_log("=== SETTING UP PHPMAILER ===");
 $mail = setup_mailer($sender_email, $sender_name);
 if (!$mail) {
     $progress['status'] = 'error';
@@ -225,7 +258,7 @@ if (empty($remaining_recipients)) {
 enhanced_log("Starting to send emails to " . count($remaining_recipients) . " remaining recipients");
 
 foreach ($remaining_recipients as $index => $recipient) {
-    enhanced_log("Processing recipient " . ($index + 1) . " of " . count($remaining_recipients));
+    enhanced_log("=== PROCESSING RECIPIENT " . ($index + 1) . " ===");
     
     // Check campaign status before each email
     $current_progress = read_progress($progress_file);
@@ -316,6 +349,8 @@ foreach ($remaining_recipients as $index => $recipient) {
         $mail->addCustomHeader('X-Campaign-ID', $campaign_id);
         $mail->addCustomHeader('X-Recipient-ID', base64_encode($email));
         
+        enhanced_log("About to send email - From: {$mail->From}, To: {$email}");
+        
         // Send email
         $mail->send();
         
@@ -327,6 +362,7 @@ foreach ($remaining_recipients as $index => $recipient) {
     } catch (Exception $e) {
         $current_progress['messages'][] = "Failed to send email to {$email} ({$first_name}): {$e->getMessage()}";
         enhanced_log("Failed to send email to {$email} ({$first_name}): {$e->getMessage()}", 'ERROR');
+        enhanced_log("PHPMailer Error Details: " . $e->getTraceAsString(), 'ERROR');
     }
     
     // Update progress
