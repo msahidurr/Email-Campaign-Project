@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-$log_file = dirname(dirname(dirname(dirname(__DIR__)))) . '/private_html/custom_php/email_campaign.log';
+$log_file = '/home/644481.cloudwaysapps.com/cbjxkvbavw/private_html/custom_php/email_campaign.log';
 
 function log_message($message) {
     file_put_contents($log_file, "[Model_B] $message at " . date('Y-m-d H:i:s') . "\n", FILE_APPEND);
